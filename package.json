@@ -12,6 +12,9 @@
     "dependencies": {
         "@hookform/resolvers": "^5.1.1",
         "firebase": "^10.8.0",
+        "react-query": "^3.39.3",
+        "react-hot-toast": "^2.4.1",
+        "react-currency-format": "^1.1.0",
         "@radix-ui/react-accordion": "^1.2.11",
         "@radix-ui/react-alert-dialog": "^1.1.14",
         "@radix-ui/react-aspect-ratio": "^1.1.7",
