@@ -22,6 +22,8 @@ const ShoppingCart = ({ isOpen, onClose }) => {
     language 
   } = useStore();
 
+  const [showCheckout, setShowCheckout] = useState(false);
+
   const handleCheckout = () => {
     if (!user) {
       toast.error('يرجى تسجيل الدخول أولاً');
@@ -34,18 +36,7 @@ const ShoppingCart = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Create WhatsApp message
-    const message = createWhatsAppMessage();
-    const whatsappUrl = `https://wa.me/963955186181?text=${encodeURIComponent(message)}`;
-    
-    // Open WhatsApp
-    window.open(whatsappUrl, '_blank');
-    
-    // Optional: Clear cart after sending to WhatsApp
-    // clearCart();
-    // onClose();
-    
-    toast.success('تم إرسال طلبك عبر الواتساب');
+    setShowCheckout(true);
   };
 
   const createWhatsAppMessage = () => {
