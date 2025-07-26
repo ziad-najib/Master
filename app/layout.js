@@ -1,15 +1,18 @@
 import './globals.css'
+import { AuthProvider } from '../contexts/AuthContext'
 
 export const metadata = {
-  title: 'Next.js MongoDB Template',
-  description: 'A simple template with App Router, MongoDB, and shadcn/ui',
+  title: 'متجري الإلكتروني - تسوق كل شيء',
+  description: 'متجر إلكتروني متكامل يبيع الإلكترونيات والملابس والمواد الغذائية وأكثر',
 }
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body>
-        {children}
+    <html lang="ar" dir="rtl">
+      <body className="font-sans bg-background text-foreground">
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )
