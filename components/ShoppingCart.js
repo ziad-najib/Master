@@ -1,13 +1,14 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../contexts/StoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import CheckoutModal from './CheckoutModal';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
-import { X, Plus, Minus, ShoppingBag, Trash2 } from 'lucide-react';
+import { X, Plus, Minus, ShoppingBag, Trash2, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const ShoppingCart = ({ isOpen, onClose }) => {
