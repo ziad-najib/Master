@@ -10,8 +10,10 @@ import uuid
 import time
 from datetime import datetime
 
-# Configuration
-BASE_URL = "https://c80fd7e2-8bfd-4ebf-86bb-559c8a6bc8dc.preview.emergentagent.com/api"
+# Configuration - Get from environment
+import os
+BASE_URL_ENV = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://souqonline.preview.emergentagent.com')
+BASE_URL = f"{BASE_URL_ENV}/api"
 HEADERS = {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
