@@ -216,9 +216,11 @@ frontend:
 
 metadata:
   created_by: "testing_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: false
+  last_updated: "2025-09-05T18:34:00Z"
+  mongodb_connection_fixed: true
 
 test_plan:
   current_focus:
