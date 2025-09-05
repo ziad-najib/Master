@@ -2,24 +2,58 @@ import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 
-// MongoDB connection
+// MongoDB connection with proper singleton pattern and connection pooling
 let client
 let db
+let connecting = false
 
 async function connectToMongo() {
   try {
+    // If already connected, return existing database
+    if (db) {
+      return db
+    }
+    
+    // If connection is in progress, wait for it
+    if (connecting) {
+      while (connecting) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      return db
+    }
+    
+    // Start connection process
+    connecting = true
+    
     if (!client) {
+      console.log('Initializing MongoDB connection...')
       client = new MongoClient(process.env.MONGO_URL, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        family: 4
       })
       await client.connect()
-      db = client.db(process.env.DB_NAME)
+      console.log('MongoDB client connected successfully')
     }
+    
+    if (!db) {
+      db = client.db(process.env.DB_NAME)
+      console.log(`Connected to database: ${process.env.DB_NAME}`)
+    }
+    
+    connecting = false
     return db
+    
   } catch (error) {
+    connecting = false
     console.error('MongoDB connection error:', error)
-    throw error
+    
+    // Reset client and db on error
+    client = null
+    db = null
+    
+    throw new Error(`Database connection failed: ${error.message}`)
   }
 }
 
