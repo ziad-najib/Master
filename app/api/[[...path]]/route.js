@@ -7,12 +7,20 @@ let client
 let db
 
 async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME)
+  try {
+    if (!client) {
+      client = new MongoClient(process.env.MONGO_URL, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true
+      })
+      await client.connect()
+      db = client.db(process.env.DB_NAME)
+    }
+    return db
+  } catch (error) {
+    console.error('MongoDB connection error:', error)
+    throw error
   }
-  return db
 }
 
 // Helper function to handle CORS
@@ -36,11 +44,15 @@ async function handleRoute(request, { params }) {
   const method = request.method
 
   try {
-    const db = await connectToMongo()
+    const database = await connectToMongo()
 
     // Root endpoint
-    if (route === '/' && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "E-commerce API is running" }))
+    if ((route === '/' || route === '') && method === 'GET') {
+      return handleCORS(NextResponse.json({ 
+        message: "E-commerce API is running",
+        version: "1.0.0",
+        timestamp: new Date().toISOString()
+      }))
     }
 
     // Users endpoints
@@ -54,14 +66,14 @@ async function handleRoute(request, { params }) {
         updatedAt: new Date()
       }
 
-      await db.collection('users').insertOne(user)
+      await database.collection('users').insertOne(user)
       const { _id, ...userResponse } = user
       return handleCORS(NextResponse.json(userResponse))
     }
 
     if (route.startsWith('/users/') && method === 'GET') {
       const uid = path[1]
-      const user = await db.collection('users').findOne({ uid })
+      const user = await database.collection('users').findOne({ uid })
       
       if (!user) {
         return handleCORS(NextResponse.json({ error: 'User not found' }, { status: 404 }))
@@ -73,20 +85,20 @@ async function handleRoute(request, { params }) {
 
     // Admin Users endpoint
     if (route === '/admin/users' && method === 'GET') {
-      const users = await db.collection('users').find({}).toArray()
+      const users = await database.collection('users').find({}).toArray()
       const cleanedUsers = users.map(({ _id, ...rest }) => rest)
       return handleCORS(NextResponse.json(cleanedUsers))
     }
 
     // Products endpoints
     if (route === '/products' && method === 'GET') {
-      const productsCount = await db.collection('products').countDocuments()
+      const productsCount = await database.collection('products').countDocuments()
       
       if (productsCount === 0) {
-        await seedProducts(db)
+        await seedProducts(database)
       }
 
-      const products = await db.collection('products')
+      const products = await database.collection('products')
         .find({})
         .limit(50)
         .toArray()
@@ -97,7 +109,7 @@ async function handleRoute(request, { params }) {
 
     // Admin Products endpoints
     if (route === '/admin/products' && method === 'GET') {
-      const products = await db.collection('products').find({}).toArray()
+      const products = await database.collection('products').find({}).toArray()
       const cleanedProducts = products.map(({ _id, ...rest }) => rest)
       return handleCORS(NextResponse.json(cleanedProducts))
     }
@@ -115,26 +127,26 @@ async function handleRoute(request, { params }) {
         updatedAt: new Date()
       }
 
-      await db.collection('products').insertOne(product)
+      await database.collection('products').insertOne(product)
       const { _id, ...productResponse } = product
       return handleCORS(NextResponse.json(productResponse))
     }
 
     if (route.startsWith('/admin/products/') && method === 'DELETE') {
       const productId = path[2]
-      await db.collection('products').deleteOne({ id: productId })
+      await database.collection('products').deleteOne({ id: productId })
       return handleCORS(NextResponse.json({ message: 'Product deleted successfully' }))
     }
 
     // Categories endpoints
     if (route === '/categories' && method === 'GET') {
-      const categoriesCount = await db.collection('categories').countDocuments()
+      const categoriesCount = await database.collection('categories').countDocuments()
       
       if (categoriesCount === 0) {
-        await seedCategories(db)
+        await seedCategories(database)
       }
 
-      const categories = await db.collection('categories')
+      const categories = await database.collection('categories')
         .find({ active: true })
         .toArray()
 
@@ -151,20 +163,22 @@ async function handleRoute(request, { params }) {
         orderNumber: `ORD${Date.now()}`,
         status: 'pending',
         paymentStatus: 'pending',
-        paymentMethod: orderData.paymentMethod || 'wallet',
+        paymentMethod: orderData.paymentMethod || 'whatsapp',
         total: orderData.total,
+        originalTotal: orderData.originalTotal || orderData.total,
+        discount: orderData.discount || 0,
+        couponCode: orderData.couponCode || null,
         items: orderData.items,
-        shippingAddress: orderData.shippingAddress,
-        customerNotes: orderData.customerNotes || '',
+        customerInfo: orderData.customerInfo,
         userId: orderData.userId,
         createdAt: new Date(),
         updatedAt: new Date()
       }
 
-      await db.collection('orders').insertOne(order)
+      await database.collection('orders').insertOne(order)
       
       if (order.paymentMethod === 'wallet') {
-        await db.collection('users').updateOne(
+        await database.collection('users').updateOne(
           { uid: orderData.userId },
           { 
             $inc: { walletBalance: -order.total },
@@ -179,7 +193,7 @@ async function handleRoute(request, { params }) {
 
     // Admin Orders endpoints
     if (route === '/admin/orders' && method === 'GET') {
-      const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).toArray()
+      const orders = await database.collection('orders').find({}).sort({ createdAt: -1 }).toArray()
       const cleanedOrders = orders.map(({ _id, ...rest }) => rest)
       return handleCORS(NextResponse.json(cleanedOrders))
     }
@@ -188,7 +202,7 @@ async function handleRoute(request, { params }) {
       const orderId = path[2]
       const updateData = await request.json()
       
-      await db.collection('orders').updateOne(
+      await database.collection('orders').updateOne(
         { id: orderId },
         { 
           $set: { 
@@ -203,7 +217,7 @@ async function handleRoute(request, { params }) {
 
     // Coupons endpoints
     if (route === '/coupons' && method === 'GET') {
-      const coupons = await db.collection('coupons')
+      const coupons = await database.collection('coupons')
         .find({ active: true, expiresAt: { $gt: new Date() } })
         .toArray()
 
@@ -214,7 +228,7 @@ async function handleRoute(request, { params }) {
     if (route === '/coupons/validate' && method === 'POST') {
       const { code, userId, total } = await request.json()
       
-      const coupon = await db.collection('coupons').findOne({
+      const coupon = await database.collection('coupons').findOne({
         code: code.toUpperCase(),
         active: true,
         expiresAt: { $gt: new Date() }
@@ -276,10 +290,10 @@ async function handleRoute(request, { params }) {
         updatedAt: new Date()
       }
 
-      await db.collection('wallet_transactions').insertOne(transaction)
+      await database.collection('wallet_transactions').insertOne(transaction)
 
       if (transaction.method === 'qr_code') {
-        await db.collection('users').updateOne(
+        await database.collection('users').updateOne(
           { uid: rechargeData.userId },
           { 
             $inc: { walletBalance: transaction.amount },
@@ -292,68 +306,6 @@ async function handleRoute(request, { params }) {
       return handleCORS(NextResponse.json(transactionResponse))
     }
 
-    // Notifications endpoints
-    if (route === '/notifications' && method === 'POST') {
-      const notificationData = await request.json()
-      
-      const notification = {
-        id: uuidv4(),
-        type: notificationData.type || 'info',
-        title: notificationData.title,
-        message: notificationData.message,
-        userId: notificationData.userId,
-        read: false,
-        createdAt: new Date()
-      }
-
-      await db.collection('notifications').insertOne(notification)
-      const { _id, ...notificationResponse } = notification
-      return handleCORS(NextResponse.json(notificationResponse))
-    }
-
-    if (route.startsWith('/notifications/') && method === 'GET') {
-      const userId = path[1]
-      const notifications = await db.collection('notifications')
-        .find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .toArray()
-
-      const cleanedNotifications = notifications.map(({ _id, ...rest }) => rest)
-      return handleCORS(NextResponse.json(cleanedNotifications))
-    }
-
-    // Reviews endpoints
-    if (route === '/reviews' && method === 'POST') {
-      const reviewData = await request.json()
-      
-      const review = {
-        id: uuidv4(),
-        productId: reviewData.productId,
-        userId: reviewData.userId,
-        userName: reviewData.userName,
-        rating: reviewData.rating,
-        comment: reviewData.comment,
-        verified: false, // Will be verified after purchase confirmation
-        createdAt: new Date()
-      }
-
-      await db.collection('reviews').insertOne(review)
-      const { _id, ...reviewResponse } = review
-      return handleCORS(NextResponse.json(reviewResponse))
-    }
-
-    if (route.startsWith('/reviews/') && method === 'GET') {
-      const productId = path[1]
-      const reviews = await db.collection('reviews')
-        .find({ productId, verified: true })
-        .sort({ createdAt: -1 })
-        .toArray()
-
-      const cleanedReviews = reviews.map(({ _id, ...rest }) => rest)
-      return handleCORS(NextResponse.json(cleanedReviews))
-    }
-
     // Route not found
     return handleCORS(NextResponse.json(
       { error: `Route ${route} not found` }, 
@@ -363,14 +315,14 @@ async function handleRoute(request, { params }) {
   } catch (error) {
     console.error('API Error:', error)
     return handleCORS(NextResponse.json(
-      { error: "Internal server error" }, 
+      { error: "Internal server error", details: error.message }, 
       { status: 500 }
     ))
   }
 }
 
 // Seed functions
-async function seedProducts(db) {
+async function seedProducts(database) {
   const sampleProducts = [
     {
       id: uuidv4(),
@@ -383,7 +335,7 @@ async function seedProducts(db) {
       category: 'electronics',
       categoryAr: 'الإلكترونيات',
       image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
-      images: ['https://images.unsplash.com/photo-1652862938332-815e45390b3c'],
+      images: ['https://images.unsplash.com/photo-1652862938332-815e45390b3c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85'],
       rating: 4.8,
       reviews: 128,
       stock: 50,
@@ -408,7 +360,7 @@ async function seedProducts(db) {
       descriptionEn: 'Advanced smartphone with AI camera and Dynamic AMOLED display',
       category: 'electronics',
       categoryAr: 'الإلكترونيات',
-      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c',
+      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
       images: ['https://images.unsplash.com/photo-1652862938332-815e45390b3c'],
       rating: 4.6,
       reviews: 95,
@@ -451,31 +403,6 @@ async function seedProducts(db) {
     },
     {
       id: uuidv4(),
-      name: 'جاكيت شتوي فاخر',
-      nameEn: 'Premium Winter Jacket',
-      price: 120,
-      originalPrice: 160,
-      description: 'جاكيت شتوي مقاوم للماء والرياح مع عزل حراري متطور',
-      descriptionEn: 'Water and wind resistant winter jacket with advanced thermal insulation',
-      category: 'clothing',
-      categoryAr: 'الملابس',
-      image: 'https://images.pexels.com/photos/7563569/pexels-photo-7563569.jpeg',
-      images: ['https://images.pexels.com/photos/7563569/pexels-photo-7563569.jpeg'],
-      rating: 4.7,
-      reviews: 67,
-      stock: 25,
-      discount: 25,
-      featured: false,
-      specifications: {
-        material: 'Polyester + Down',
-        sizes: ['M', 'L', 'XL', 'XXL'],
-        colors: ['Black', 'Navy', 'Olive']
-      },
-      createdAt: new Date(),
-      updatedAt: new Date()
-    },
-    {
-      id: uuidv4(),
       name: 'كيكة الشوكولاتة الفاخرة',
       nameEn: 'Premium Chocolate Cake',
       price: 25,
@@ -484,7 +411,7 @@ async function seedProducts(db) {
       descriptionEn: 'Premium chocolate cake made with finest Belgian cocoa',
       category: 'food',
       categoryAr: 'المواد الغذائية',
-      image: 'https://images.unsplash.com/photo-1716535232783-38a9e49eeffa',
+      image: 'https://images.unsplash.com/photo-1716535232783-38a9e49eeffa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwzfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
       images: ['https://images.unsplash.com/photo-1716535232783-38a9e49eeffa'],
       rating: 4.9,
       reviews: 87,
@@ -495,31 +422,6 @@ async function seedProducts(db) {
         weight: '1kg',
         serves: '8-10 people',
         ingredients: 'Belgian Chocolate, Flour, Sugar, Eggs, Butter'
-      },
-      createdAt: new Date(),
-      updatedAt: new Date()
-    },
-    {
-      id: uuidv4(),
-      name: 'قهوة عربية فاخرة',
-      nameEn: 'Premium Arabic Coffee',
-      price: 35,
-      originalPrice: 45,
-      description: 'مزيج فاخر من أجود حبوب القهوة العربية المحمصة بإتقان',
-      descriptionEn: 'Premium blend of finest Arabic coffee beans expertly roasted',
-      category: 'food',
-      categoryAr: 'المواد الغذائية',
-      image: 'https://images.unsplash.com/photo-1716535232783-38a9e49eeffa',
-      images: ['https://images.unsplash.com/photo-1716535232783-38a9e49eeffa'],
-      rating: 4.6,
-      reviews: 156,
-      stock: 80,
-      discount: 22,
-      featured: false,
-      specifications: {
-        weight: '500g',
-        origin: 'Yemen + Colombia',
-        roast: 'Medium Dark'
       },
       createdAt: new Date(),
       updatedAt: new Date()
@@ -559,7 +461,7 @@ async function seedProducts(db) {
       descriptionEn: 'Advanced smartwatch for fitness tracking with GPS and waterproof design',
       category: 'electronics',
       categoryAr: 'الإلكترونيات',
-      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c',
+      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
       images: ['https://images.unsplash.com/photo-1652862938332-815e45390b3c'],
       rating: 4.4,
       reviews: 203,
@@ -577,10 +479,10 @@ async function seedProducts(db) {
     }
   ]
 
-  await db.collection('products').insertMany(sampleProducts)
+  await database.collection('products').insertMany(sampleProducts)
 }
 
-async function seedCategories(db) {
+async function seedCategories(database) {
   const sampleCategories = [
     {
       id: uuidv4(),
@@ -589,7 +491,7 @@ async function seedCategories(db) {
       slug: 'electronics',
       description: 'أجهزة إلكترونية وتقنية متطورة',
       descriptionEn: 'Electronic devices and advanced technology',
-      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c',
+      image: 'https://images.unsplash.com/photo-1652862938332-815e45390b3c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwyfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
       icon: '📱',
       parentId: null,
       active: true,
@@ -617,7 +519,7 @@ async function seedCategories(db) {
       slug: 'food',
       description: 'مواد غذائية طازجة وعالية الجودة',
       descriptionEn: 'Fresh and high-quality food products',
-      image: 'https://images.unsplash.com/photo-1716535232783-38a9e49eeffa',
+      image: 'https://images.unsplash.com/photo-1716535232783-38a9e49eeffa?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwzfHxlLWNvbW1lcmNlfGVufDB8fHxibHVlfDE3NTM1NjIzNzB8MA&ixlib=rb-4.1.0&q=85',
       icon: '🍎',
       parentId: null,
       active: true,
@@ -640,7 +542,7 @@ async function seedCategories(db) {
     }
   ]
 
-  await db.collection('categories').insertMany(sampleCategories)
+  await database.collection('categories').insertMany(sampleCategories)
 
   // Seed some coupons
   const sampleCoupons = [
@@ -668,10 +570,23 @@ async function seedCategories(db) {
       expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
       usedBy: [],
       createdAt: new Date()
+    },
+    {
+      id: uuidv4(),
+      code: 'FIRST50',
+      type: 'percentage',
+      value: 50,
+      maxDiscount: 25,
+      minOrderAmount: 30,
+      description: 'خصم الطلب الأول 50%',
+      active: true,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+      usedBy: [],
+      createdAt: new Date()
     }
   ]
 
-  await db.collection('coupons').insertMany(sampleCoupons)
+  await database.collection('coupons').insertMany(sampleCoupons)
 }
 
 // Export all HTTP methods
